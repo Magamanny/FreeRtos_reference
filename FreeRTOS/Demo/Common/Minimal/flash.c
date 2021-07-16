@@ -62,33 +62,78 @@ static portTASK_FUNCTION_PROTO( vLEDFlashTask, pvParameters );
 // my function
 static portTASK_FUNCTION_PROTO( vTaskMyLed_1, pvParameters );
 static portTASK_FUNCTION_PROTO( vTaskMyLed_2, pvParameters );
+static portTASK_FUNCTION_PROTO( vTaskMyButton, pvParameters );
 /*-----------------------------------------------------------*/
-
+static TaskHandle_t xLed1_Task;
 void vStartLEDFlashTasks( UBaseType_t uxPriority )
 {
-BaseType_t xLEDTask;
-	/* Create the three tasks. */
-	for( xLEDTask = 0; xLEDTask < ledNUMBER_OF_LEDS; ++xLEDTask )
-	{
-		/* Spawn the task. */
-		//xTaskCreate( vLEDFlashTask, "LEDx", ledSTACK_SIZE, NULL, uxPriority, ( TaskHandle_t * ) NULL );
-	}
-        xTaskCreate( vTaskMyLed_1, "LEDx", ledSTACK_SIZE, NULL, tskIDLE_PRIORITY, ( TaskHandle_t * ) NULL );
-        xTaskCreate( vTaskMyLed_2, "LEDx", ledSTACK_SIZE, NULL, tskIDLE_PRIORITY, ( TaskHandle_t * ) NULL );
+        xTaskCreate( vTaskMyLed_1, "LED_1", ledSTACK_SIZE, NULL, tskIDLE_PRIORITY, &xLed1_Task );
+        xTaskCreate( vTaskMyLed_2, "LED_2", ledSTACK_SIZE, NULL, tskIDLE_PRIORITY, ( TaskHandle_t * ) NULL );
+        xTaskCreate( vTaskMyButton, "button", ledSTACK_SIZE, NULL, tskIDLE_PRIORITY, ( TaskHandle_t * ) NULL );
 }
 /*-----------------------------------------------------------*/
 // Task to be created.
 // This is the way this demo does it
 // extermely bad for viewing, but provide portablility(I think)
 static portTASK_FUNCTION( vTaskMyLed_1, pvParameters ) // this will expend to vTaskCode()
-{ 
+{
+  uint8_t toggle_state=0;
   for( ;; )
   {
-    if(GPIO_ReadInputDataBit(GPIOB,GPIO_Pin_12)==Bit_RESET)
+    uint32_t state = ulTaskNotifyTakeIndexed( 0,               /* Use the 0th notification */
+                                 pdTRUE,          /* Clear the notification value 
+                                                     before exiting. */
+                                 0 ); /* Block indefinitely. */
+    if(state==1)
+    {
+      if(toggle_state==1)
+      {
+        toggle_state=0;
+      }
+      else
+      {
+        toggle_state=1;
+      }
+    }
+    if(toggle_state == 1)
     {
       vParTestToggleLED( 3 );
     }
     vTaskDelay(60);
+    // Task code goes here.
+  }
+}
+/*-----------------------------------------------------------*/
+// Task to be created.
+// This is the way this demo does it
+// extermely bad for viewing, but provide portablility(I think)
+static portTASK_FUNCTION( vTaskMyButton, pvParameters ) // this will expend to vTaskCode()
+{
+  uint8_t btn_state_now;
+  uint8_t btn_state_prev;
+  for( ;; )
+  {
+    if(GPIO_ReadInputDataBit(GPIOB,GPIO_Pin_12)==Bit_RESET)
+    {
+      btn_state_now=0;
+    }
+    else
+    {
+      btn_state_now=1;
+    }
+    if(btn_state_now != btn_state_prev)
+    {
+      btn_state_prev=btn_state_now;
+      if(btn_state_now==0)
+      {
+        // for safty
+        if(xLed1_Task != NULL)
+        {
+          xTaskNotifyGiveIndexed( xLed1_Task, 0 );
+        }
+      }
+    }
+    vTaskDelay(100);
     // Task code goes here.
   }
 }
