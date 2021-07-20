@@ -51,7 +51,7 @@
 #include "flash.h"
 #include "portmacro.h"
 #include "queue.h"
-
+#include "stream_buffer.h"
 
 #define ledSTACK_SIZE		configMINIMAL_STACK_SIZE
 #define ledNUMBER_OF_LEDS	( 3 )
@@ -86,6 +86,14 @@ static portTASK_FUNCTION_PROTO( vTaskMyLed_2, pvParameters );
 static portTASK_FUNCTION_PROTO( vTaskMyButton, pvParameters );
 static portTASK_FUNCTION_PROTO( newTask, pvParameters );
 
+// stream buffer 
+#define sbiSTREAM_BUFFER_LENGTH_BYTES		( ( size_t ) 100 )
+#define sbiSTREAM_BUFFER_TRIGGER_LEVEL_10	( ( BaseType_t ) 10 )
+/* The stream buffer that is used to send data from an interrupt to the task. */
+static StreamBufferHandle_t xStreamBuffer = NULL;
+/* The string that is sent from the interrupt to the task four bytes at a
+time.  Must be multiple of 4 bytes long as the ISR sends 4 bytes at a time*/
+static const char * pcStringToSend = "_____Hello FreeRTOS_____";
 
 /*-----------------------------------------------------------*/
 static TaskHandle_t xLed1_Task;
@@ -98,6 +106,12 @@ void vStartLEDFlashTasks( UBaseType_t uxPriority )
         msg_queue = xQueueCreate(msg_queue_len, sizeof(int));
         msg_queue1 = xQueueCreate(msg_queue1_len, sizeof(char));
         msg_queue2 = xQueueCreate(msg_queue2_len, 10*sizeof(char));
+        /* Create the stream buffer that sends data from the interrupt to the
+	task, and create the task. */
+	xStreamBuffer = xStreamBufferCreate( /* The buffer length in bytes. */
+                                             sbiSTREAM_BUFFER_LENGTH_BYTES,
+                                             /* The stream buffer's trigger level. */
+                                             sbiSTREAM_BUFFER_TRIGGER_LEVEL_10 );
         //
         UART5_Configuration(9600);
 }
@@ -233,8 +247,30 @@ static portTASK_FUNCTION( vTaskMyButton, pvParameters ) // this will expend to v
 // extermely bad for viewing, but provide portablility(I think)
 static portTASK_FUNCTION( vTaskMyLed_2, pvParameters ) // this will expend to vTaskCode()
 {
+  static char cRxBuffer[ 20 ];
+  static BaseType_t xNextByte = 0;
+  size_t xReceivedBytes;
+  const TickType_t xBlockTime = pdMS_TO_TICKS( 20 );
   for( ;; )
   {
+    // recive one byte at a time
+    xReceivedBytes = xStreamBufferReceive( /* The stream buffer data is being received from. */
+                          xStreamBuffer,
+                          /* Where to place received data. */
+                          ( void * ) &( cRxBuffer[ xNextByte ] ),
+                          /* The number of bytes to receive. */
+                          sizeof( char ),
+                          /* The time to wait for the next data if the buffer
+                          is empty. */
+                          xBlockTime );
+    if( xReceivedBytes > 0 )
+    {
+      xNextByte++;
+      if(xNextByte>=20)
+      {
+        xNextByte=0; // roll back
+      }
+    }
     vParTestToggleLED( 0 );
     vTaskDelay(80);
     // Task code goes here.
@@ -363,16 +399,15 @@ void usart5_sendString(uint8_t *str)
 // set priority of 6
 void UART5_IRQHandler(void)
 {
-  
+  // stream buffer
+  // used for indexing
+  static size_t xNextByteToSend = 0;
+  const BaseType_t xBytesToSend=1;
   //definations for QueuefromISR
   char cIn;
   BaseType_t xHigherPriorityTaskWoken;
-  
-  
   // We have not woken a task at the start of the ISR.
   xHigherPriorityTaskWoken = pdFALSE;
-  
-  
   if (USART_GetITStatus(UART5, USART_IT_RXNE) != RESET)
   {
     //code here
@@ -384,15 +419,22 @@ void UART5_IRQHandler(void)
     
     // Post the byte.
     xQueueSendFromISR( msg_queue1, &cIn, &xHigherPriorityTaskWoken );
-    
+    xStreamBufferSendFromISR( xStreamBuffer,
+                              ( const void * ) ( pcStringToSend + xNextByteToSend ),
+                              xBytesToSend,
+                              NULL );
+    xNextByteToSend += xBytesToSend;
+    if( xNextByteToSend >= strlen( pcStringToSend ) )
+    {
+            xNextByteToSend = 0;
+    }
+    USART_ClearITPendingBit(UART5, USART_IT_RXNE);
+    // context switch at the end
     // Now the buffer is empty we can switch context if necessary.
     if( xHigherPriorityTaskWoken )
     {
       // Actual macro used here is port specific.
       portYIELD_FROM_ISR (pdTRUE);
     }
-    
-  
-    USART_ClearITPendingBit(UART5, USART_IT_RXNE);
   }
 }

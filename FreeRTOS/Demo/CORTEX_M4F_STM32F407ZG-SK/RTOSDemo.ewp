@@ -1109,6 +1109,9 @@
             <name>$PROJ_DIR$\..\..\Source\queue.c</name>
         </file>
         <file>
+            <name>$PROJ_DIR$\..\..\Source\stream_buffer.c</name>
+        </file>
+        <file>
             <name>$PROJ_DIR$\..\..\Source\tasks.c</name>
         </file>
         <file>
