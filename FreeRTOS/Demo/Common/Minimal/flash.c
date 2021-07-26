@@ -52,6 +52,7 @@
 #include "portmacro.h"
 #include "queue.h"
 #include "stream_buffer.h"
+#include "semphr.h"
 
 #define ledSTACK_SIZE		configMINIMAL_STACK_SIZE
 #define ledNUMBER_OF_LEDS	( 3 )
@@ -97,6 +98,8 @@ static const char * pcStringToSend = "_____Hello FreeRTOS_____";
 
 /*-----------------------------------------------------------*/
 static TaskHandle_t xLed1_Task;
+// mutex
+static SemaphoreHandle_t xMutex;
 void vStartLEDFlashTasks( UBaseType_t uxPriority )
 {
         xTaskCreate( vTaskMyLed_1, "LED_1", ledSTACK_SIZE, NULL, tskIDLE_PRIORITY, &xLed1_Task );
@@ -113,7 +116,8 @@ void vStartLEDFlashTasks( UBaseType_t uxPriority )
                                              /* The stream buffer's trigger level. */
                                              sbiSTREAM_BUFFER_TRIGGER_LEVEL_10 );
         //
-        UART5_Configuration(9600);
+        UART5_Configuration(4800);
+        xMutex = xSemaphoreCreateMutex();
 }
 
 /*-----------------------------------------------------------*/
@@ -184,7 +188,14 @@ static portTASK_FUNCTION( vTaskMyLed_1, pvParameters ) // this will expend to vT
     {
       vParTestToggleLED( 3 );
     }
-    vTaskDelay(1000);
+    else
+    {
+      vParTestToggleLED( 1 );
+    }
+    xSemaphoreTake( xMutex, portMAX_DELAY );
+    usart5_sendString("vTaskMyLed_1: ------------------------------\r\n");
+    xSemaphoreGive( xMutex );
+    vTaskDelay(500 / portTICK_PERIOD_MS);
     // Task code goes here.
   }
 }
@@ -237,7 +248,7 @@ static portTASK_FUNCTION( vTaskMyButton, pvParameters ) // this will expend to v
         num++;
       }
     }
-    vTaskDelay(100);
+    vTaskDelay(80);
     // Task code goes here.
   }
 }
@@ -259,20 +270,23 @@ static portTASK_FUNCTION( vTaskMyLed_2, pvParameters ) // this will expend to vT
                           /* Where to place received data. */
                           ( void * ) &( cRxBuffer[ xNextByte ] ),
                           /* The number of bytes to receive. */
-                          sizeof( char ),
+                          2*sizeof( char ),
                           /* The time to wait for the next data if the buffer
                           is empty. */
                           xBlockTime );
     if( xReceivedBytes > 0 )
     {
-      xNextByte++;
+      xNextByte+=2;
       if(xNextByte>=20)
       {
         xNextByte=0; // roll back
       }
     }
     vParTestToggleLED( 0 );
-    vTaskDelay(80);
+    xSemaphoreTake( xMutex, portMAX_DELAY );
+    usart5_sendString("vTaskMyLed_2: ******************************\r\n");
+    xSemaphoreGive( xMutex );
+    vTaskDelay(rand()%500);
     // Task code goes here.
   }
 }

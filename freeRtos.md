@@ -7,6 +7,8 @@ This is the function defined in portmacro.h.
 ```c
 // The braces and semicolon are just of formating
 {
+    // number of tick in a ms
+    portTICK_PERIOD_MS
 	// A macro used to define prototype of a task function
 	portTASK_FUNCTION_PROTO( vFunction, pvParameters );
 	// A macro used to define the body of a task function
@@ -18,10 +20,12 @@ This is the function defined in portmacro.h.
     // Request context switch from ISR, the taskYIELD() dont have the ISR safe funtionc
     // so use this is ISR, will do the same thing
     portYIELD_FROM_ISR (pdTRUE);
+    // like task yield, taskYIELD() is maped on this, used taskYIELD() in app
+    portYIELD();
 }
 ```
 
-
+portTASK_FUNCTION and portTASK_FUNCTION_PROTO macros. These macro are provided to allow compiler specific syntax to be added to the function definition and prototype respectively. Their use is not required unless specifically stated in documentation for the port being used (currently only the PIC18 fedC port).
 
 ## Task Creation
 
@@ -88,6 +92,21 @@ The tick rate is 1ms for freeRTOS for, it can be configured using 'configTICK_RA
 > **Note**: INCLUDE_vTaskDelay must be defined as 1 for this function to be available.
 
 See code in "xTaskCreate()" for an example usage.
+
+```c
+ void vTaskFunction( void * pvParameters )
+ {
+ /* Block for 500ms. */
+ const TickType_t xDelay = 500 / portTICK_PERIOD_MS;
+
+     for( ;; )
+     {
+         /* Simply toggle the LED every 500ms, blocking between each toggle. */
+         vToggleLED();
+         vTaskDelay( xDelay );
+     }
+}
+```
 
 ### vTaskDelayUntil
 
@@ -411,7 +430,107 @@ taskYIELD() is used to request a context switch to another task. However, if the
 
 To run the scheduler in cooperative mode set configUSE_PREEMPTION to 0, and for running it in preemptive mode set it to 1.
 
+Function classified as kernel control:
+
+```c
+// Macro for forcing a context switch, maps to portYIELD()
+taskYIELD();
+```
+
+### Critical Region
+
+Critical regions are those area of the code where Preemptive context switch cannot occur. FreeRtos provide function to specify where such section begin and end. The function are as follow:
+
+```c
+// Macro to mark the start of a critical code region.  Preemptive context
+// switches cannot occur when in a critical region.
+taskENTER_CRITICAL();
+taskENTER_CRITICAL_FROM_ISR();
+// Macro to mark the end of a critical code region
+taskEXIT_CRITICAL(x);
+taskEXIT_CRITICAL_FROM_ISR(x);
+```
+
+The these function can be nested and should be called in pair, the kernel keeps count of the nesting level and will end the critical region when the level reaches zero. No other function should be used as it may change the nesting count.
+
+Critical section are vary fast to execute and are deterministic.
+
+Example:
+
+```c
+/* A function called from an ISR. */
+void vDemoFunction( void )
+{
+UBaseType_t uxSavedInterruptStatus;
+
+    /* Enter the critical section.  In this example, this function is itself called from
+    within a critical section, so entering this critical section will result in a nesting
+    depth of 2. Save the value returned by taskENTER_CRITICAL_FROM_ISR() into a local
+    stack variable so it can be passed into taskEXIT_CRITICAL_FROM_ISR(). */
+    uxSavedInterruptStatus = taskENTER_CRITICAL_FROM_ISR();
+
+    /* Perform the action that is being protected by the critical section here. */
+
+    /* Exit the critical section.  In this example, this function is itself called from a
+    critical section, so interrupts will have already been disabled before a value was
+    stored in uxSavedInterruptStatus, and therefore passing uxSavedInterruptStatus into
+    taskEXIT_CRITICAL_FROM_ISR() will not result in interrupts being re-enabled. */
+    taskEXIT_CRITICAL_FROM_ISR( uxSavedInterruptStatus );
+}
+
+/* A task that calls vDemoFunction() from within an interrupt service routine. */
+void vDemoISR( void )
+{
+	UBaseType_t uxSavedInterruptStatus;
+    
+    /* Call taskENTER_CRITICAL_FROM_ISR() to create a critical section, saving the
+    returned value into a local stack variable. */
+    uxSavedInterruptStatus = taskENTER_CRITICAL_FROM_ISR();
+
+
+    /* Execute the code that requires the critical section here. */
+
+
+    /* Calls to taskENTER_CRITICAL_FROM_ISR() can be nested so it is safe to call a
+    function that includes its own calls to taskENTER_CRITICAL_FROM_ISR() and
+    taskEXIT_CRITICAL_FROM_ISR(). */
+    vDemoFunction();
+
+    /* The operation that required the critical section is complete so exit the
+    critical section.  Assuming interrupts were enabled on entry to this ISR, the value
+    saved in uxSavedInterruptStatus will result in interrupts being re-enabled.*/
+    taskEXIT_CRITICAL_FROM_ISR( uxSavedInterruptStatus );
+}
+```
+
+### vTaskStartScheduler
+
+Starts the RTOS scheduler. After calling the RTOS kernel has control over which tasks are executed and when.
+
+```c
+void vAFunction( void )
+ {
+     // Tasks can be created before or after starting the RTOS
+     scheduler
+     xTaskCreate( vTaskCode,
+                  "NAME",
+                  STACK_SIZE,
+                  NULL,
+                  tskIDLE_PRIORITY,
+                  NULL );
+
+     // Start the real time scheduler.
+     vTaskStartScheduler();
+
+     // Will not get here unless there is insufficient RAM.
+ }
+```
+
+
+
 ### Kernel Parameters
+
+These parameters are defined in the application FreeRTOSConfig.h file.
 
 ```c
 /* This is used to select the sheduler mode, cooperative or preemptive. 1 means preemptive mode and 0 means cooperative mode */
@@ -422,11 +541,12 @@ To run the scheduler in cooperative mode set configUSE_PREEMPTION to 0, and for 
 #define configCPU_CLOCK_HZ				( SystemCoreClock )
 /* This is the tick frequency 1000Hz means that the kernal is running a 1ms accuracy */
 #define configTICK_RATE_HZ				( ( TickType_t ) 1000 )
+
 ```
 
-### Stream Buffers file
+### Stream Buffers
 
-The underline information is given in the message.
+The underline information is given in the stream buffer file.
 
 ```c
 /*
@@ -455,6 +575,25 @@ The underline information is given in the message.
  * service routine (ISR).
  */
 ```
+
+Stream buffers are an RTOS task to RTOS task, and interrupt to task communication primitives.Unlike most other FreeRTOS communications primitives, they are optimised for single reader single writer scenarios, such as passing data from an interrupt service routine to a task, or from one microcontroller core to another on dual core CPUs. Data is passed by copy - the data is copied into the buffer by the sender and out of the buffer by the read.
+
+Functions:
+
+```c
+// handle to that is used to access the buffer
+static StreamBufferHandle_t xStreamBuffer = NULL;
+// creating functions
+xStreamBufferCreate();
+// reciving funciotns
+xStreamBufferReceive();
+xStreamBufferReceiveFromISR();
+// sending function
+xStreamBufferSend();
+xStreamBufferSendFromISR();
+```
+
+
 
 ### Example
 
@@ -486,9 +625,11 @@ recivingTask()
     static char cRxBuffer[ 20 ];
     static BaseType_t xNextByte = 0;
     size_t xReceivedBytes;
+    // set block time to portMAX_DELAY, to wait till trigger level is reached
     const TickType_t xBlockTime = pdMS_TO_TICKS( 20 );
     for(;;)
     {
+        //xStreamBufferReceiveFromISR() if in ISR
         xReceivedBytes = xStreamBufferReceive( 
             /* The stream buffer data is being received from. */
             xStreamBuffer,
@@ -516,7 +657,7 @@ ISR()
     BaseType_t xHigherPriorityTaskWoken;
   	// We have not woken a task at the start of the ISR.
   	xHigherPriorityTaskWoken = pdFALSE;
-    
+    // xStreamBufferSend() if not in a inturrupt
     xStreamBufferSendFromISR( xStreamBuffer,
                               ( const void * ) ( pcStringToSend + xNextByteToSend ),
                               xBytesToSend,
@@ -638,5 +779,41 @@ static portTASK_FUNCTION( vTaskMyButton, pvParameters )
     // Task code goes here.
   }
 }
+```
+
+### Mutexes
+
+Mutexes are RTOS objects that are used for resource management. The word is originate form the word 'MUTual EXclution'.
+
+To use mutexes the the freertosConfig should have:
+
+```c
+#define configUSE_MUTEXES				1
+// 1 to include recursive mutexes, otherwise set it to zero
+#define configUSE_RECURSIVE_MUTEXES		1
+```
+
+```c
+#include "semphr.h" // has the defination of the function used
+static SemaphoreHandle_t xMutex; // mutex global socp
+void setup()
+{
+    xMutex = xSemaphoreCreateMutex();
+}
+static void func_one( const char *pcString )
+{
+ xSemaphoreTake( xMutex, portMAX_DELAY ); // take the mutex/token
+ // Use the lock resource
+ // when done
+ xSemaphoreGive( xMutex ); // give it back so other can use it
+}
+static void func_two( const char *pcString )
+{
+ xSemaphoreTake( xMutex, portMAX_DELAY ); // take the mutex/token
+ // Use the lock resource
+ // when done
+ xSemaphoreGive( xMutex ); // give it back so other can use it
+}
+
 ```
 
