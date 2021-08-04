@@ -148,279 +148,62 @@ These need to be define in rtos configuration file to use taskDelay functions.
 #define INCLUDE_vTaskDelay				1
 ```
 
-## Queue creation
+## Customization
 
-### xQueueCreate
+### Configuration
 
-xQueueCreate will create Queue. It will take two argument i.e. Queue length and size of object to be placed inside the queue. This function should be called in main function. Queue handle should be made, that will have the status of the xQueueCreate function.
-
-The example code uses a queue to send data from a 'task' to a 2nd 'task'. The 2nd task will send a message when a button is pressed.
+FreeRTOS is customized using a configuration file called FreeRTOSConfig.h. Blow is the content of the file with a short description each parameter, this is not the complete list. For a complete list refer to FreeRTOS website.
 
 ```c
-//Define queue length
-static uint8_t msg_queue_len = 5;
+#ifndef FREERTOS_CONFIG_H
+#define FREERTOS_CONFIG_H
 
-//Queue handle
-static QueueHandle_t msg_queue;
+/* Here is a good place to include header files that are required across
+your application. */
+#include "something.h"
+/* This should be kept as provided in demo app, this is in words not bytes(1 word is 4 bytes), thus it is 130*4 = 520 bytes */
+#define configMINIMAL_STACK_SIZE		( ( unsigned short ) 130 )
+/* Memory allocation related definitions. */
+/* These are set to their default values(we will not define them), see FreeRtos.h */
 
-//Queue create
-// call this is a function, or main setup function, this is just an example
-void setupFunction()
-{
-	msg_queue = xQueueCreate(msg_queue_len, sizeof(int));
-}
-//create task function
-static portTASK_FUNCTION_PROTO( Queue_sendTask_button, pvParameters );
-static portTASK_FUNCTION_PROTO( Queue_receiveTask, pvParameters );
+/* Optional functions */
+/* Define features that are to be used, like taskDelay */
+/* A header file that defines trace macro can be included here. */
 
-//In main
-void setupFunction2()
-{
-    xTaskCreate( Queue_sendTask,
-    			"send",
-    			configMINIMAL_STACK_SIZE,
-    			NULL,
-    			tskIDLE_PRIORITY,
-    			( TaskHandle_t * ) NULL );
-    xTaskCreate( Queue_receiveTask,
-    			 "receive",
-    			 configMINIMAL_STACK_SIZE,
-    			 NULL,
-    			 tskIDLE_PRIORITY,
-    			 ( TaskHandle_t * ) NULL );
-}
-// this will expend to vTaskCode()
-static Queue_receiveTask( Queue_receiveTask, pvParameters )
-{
-  uint8_t item;
-  uint8_t index=0;
-  for( ;; )
-  {
-    
-    if(xQueueReceive(msg_queue,(void *) &item,0)==pdTRUE){
-      asm("NOP");
-      item_array[index++] = item;
-    }
-    vTaskDelay(100);
-    // Task code goes here.
-  }
-}
-
-static portTASK_FUNCTION( Queue_sendTask_button, pvParameters ) 
-{
-  uint8_t btn_state_now;
-  uint8_t btn_state_prev;
-  static uint8_t num=0;
-  for( ;; )
-  {
-    if(GPIO_ReadInputDataBit(GPIOB,GPIO_Pin_12)==Bit_RESET)
-    {
-      btn_state_now=0;
-    }
-    else
-    {
-      btn_state_now=1;
-    }
-    if(btn_state_now != btn_state_prev)
-    {
-      btn_state_prev=btn_state_now;
-      if(btn_state_now==0)
-      {
-       
-        if(xQueueSend(msg_queue,(void *)&num,10) != pdTRUE){
-        //queue full
-        }
-        num++;
-      }
-    }
-    vTaskDelay(100);
-    // Task code goes here.
-  }
-}
+#endif /* FREERTOS_CONFIG_H */
 ```
 
+### Memory Management
 
+The FreeRtos version 10 provide five heap management schemes. Only one scheme file should be used at a time(personal preference). Following below:
 
-## UART Transmit and Receive 
+- heap_1 - the very simplest, does not permit memory to be freed.
+- heap_2 - permits memory to be freed, but does not coalescence adjacent free blocks.
+- heap_3 - simply wraps the standard malloc() and free() for thread safety.
+- heap_4 - coalescences adjacent free blocks to avoid fragmentation. Includes absolute address placement option.
+- heap_5 - as per heap_4, with the ability to span the heap across multiple non-adjacent memory areas.
 
-We will configure UART same as in SPL(Standard peripheral library). Only one thing will change in the configuration that is the priority of the interrupt. Its priority should be lower configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY.  
+Notes:
 
- The highest interrupt priority that can be used by any interrupt service
-routine that makes calls to interrupt safe FreeRTOS API functions.  DO NOT CALL
-INTERRUPT SAFE FREERTOS API FUNCTIONS FROM ANY INTERRUPT THAT HAS A HIGHER
-PRIORITY THAN THIS! **(higher priorities are lower numeric values. )**
+- heap_1 is less useful since FreeRTOS added support for static allocation.
+- heap_2 is now considered legacy as the newer heap_4 implementation is preferred.
 
-```c
-//This is already defined in FreeRTOSConfig.h file
-#define configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY	5 
-```
+### Stream Buffers vs Message Buffers vs Queues
 
-Thus the ISR should be of value higher or equal to 5. This means interrupts of 5,6,7..15 can use the FreeRTOS ISR safe function inside them, and ISR of 0,1,2,3 and 4 cannot use the FreeRTOS ISR safe functions.(ISR safe function are define in FreeRTOS docs)
+Here is a reply from 'Richard Barry' creator of FreeRtos.
 
-The below example receives characters from uart5 and echo them back using a task, this demonstrate queues.
-
-### UART Configuration
-
-```c
-// configure usart5 as tx and rx
-void UART5_Configuration(uint32_t Baud)
-{
-	GPIO_InitTypeDef  GPIO_InitStructure;
-	USART_InitTypeDef USART_InitStructure;
-	NVIC_InitTypeDef  NVIC_InitStructure;
-
-	// Enable GPIOC CLOCK
-	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC, ENABLE);
-
-	//Enable GPIOD CLOCK
-	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOD, ENABLE);
-
-	//Enable UART5 CLOCK
-	RCC_APB1PeriphClockCmd(RCC_APB1Periph_UART5, ENABLE);
-
-	// Configure the PD12 as a UART5 alternate pin.
-	GPIO_PinAFConfig(GPIOC, GPIO_PinSource12, GPIO_AF_UART5);
-
-	GPIO_InitStructure.GPIO_OType					= GPIO_OType_PP;
-	GPIO_InitStructure.GPIO_PuPd 					= GPIO_PuPd_UP;
-	GPIO_InitStructure.GPIO_Mode 					= GPIO_Mode_AF;
-	GPIO_InitStructure.GPIO_Pin 					= GPIO_Pin_12;					//Configure only TX
-	GPIO_InitStructure.GPIO_Speed 				= GPIO_Speed_50MHz;
-	GPIO_Init(GPIOC, &GPIO_InitStructure);
-
-	// Configure the PD2 as a UART5 alternate pin.
-	GPIO_PinAFConfig(GPIOD, GPIO_PinSource2, GPIO_AF_UART5);
-
-	GPIO_InitStructure.GPIO_OType					= GPIO_OType_PP;
-	GPIO_InitStructure.GPIO_PuPd 					= GPIO_PuPd_UP;
-	GPIO_InitStructure.GPIO_Mode 					= GPIO_Mode_AF;
-	GPIO_InitStructure.GPIO_Pin 					= GPIO_Pin_2;					//Configure only TX
-	GPIO_InitStructure.GPIO_Speed 				= GPIO_Speed_50MHz;
-	GPIO_Init(GPIOD, &GPIO_InitStructure);
-
-
-	/* Enable the UART5 Interrupt */
-	NVIC_InitStructure.NVIC_IRQChannel = UART5_IRQn;
-    //low priority campare to 5
-	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 6;
-	NVIC_InitStructure.NVIC_IRQChannelSubPriority 	   = 0;
-	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-	NVIC_Init(&NVIC_InitStructure);
-
-
-	USART_InitStructure.USART_BaudRate   			= Baud;
-	USART_InitStructure.USART_WordLength          = USART_WordLength_8b;
-	USART_InitStructure.USART_StopBits            = USART_StopBits_1;
-	USART_InitStructure.USART_Parity  		    = USART_Parity_No;
-	USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
-	USART_InitStructure.USART_Mode				= USART_Mode_Rx | USART_Mode_Tx;
-
-	USART_ITConfig(UART5, USART_IT_RXNE, ENABLE); // Enable USART1 Receive Interrupt
-	USART_Init(UART5, &USART_InitStructure);
-	USART_Cmd(UART5,  ENABLE);
-}
-// sending functions
-void usart_SendString(USART_TypeDef* USARTx, uint8_t * str)
-{
-	while (*str != '\0')
-	{
-		usart_SendChar(USARTx,*str);
-		str++;
-	}
-}
-// usart_SendChar(UART5,'a');
-void usart_SendChar(USART_TypeDef* USARTx, uint8_t ch)
-{
-	while (!(USARTx->SR & USART_SR_TXE))
-		; // wait for TX to empty
-	USART_SendData(USARTx, ch & 0xFF);
-	while (!(USARTx->SR & USART_SR_TC))
-		; // wait for Transmit complete
-}
-void usart5_sendString(uint8_t *str)
-{
-	usart_SendString(UART5,str);
-}
-```
-
-### UART Receive Data
-
-We will use ISR to receive the data and save it in Queue. we will first create the queue and specify its length.
-
-```c
-// this should be in scope of both sender and reciver
-//Define queue length
-static uint8_t msg_queue1_len = 10;
-
-//Queue handle
-static QueueHandle_t msg_queue1;
-```
-
-
-
-```c
-//Queue Creation
-// in main setup function
-msg_queue1 = xQueueCreate(msg_queue1_len, sizeof(char));
-```
-
-
-
-```c
-void UART5_IRQHandler(void)
-{
-  //definations for QueuefromISR
-  char cIn;
-  BaseType_t xHigherPriorityTaskWoken;
-  // We have not woken a task at the start of the ISR.
-  xHigherPriorityTaskWoken = pdFALSE;
-  if (USART_GetITStatus(UART5, USART_IT_RXNE) != RESET)
-  {
-    cIn = USART_ReceiveData(UART5);
-    // Post the byte.
-    xQueueSendFromISR( msg_queue1, &cIn, &xHigherPriorityTaskWoken );
-    // Now the buffer is empty we can switch context if necessary.
-    if( xHigherPriorityTaskWoken )
-    {
-      // Actual macro used here is port specific.
-      portYIELD_FROM_ISR (pdTRUE);
-    }
-    USART_ClearITPendingBit(UART5, USART_IT_RXNE);
-  }
-}
-```
-
-### UART Send Data
-
- We will make a task to receive the queue that is send from the interrupt. 
-
-```c
-//task function
-static portTASK_FUNCTION_PROTO( newTask, pvParameters );
-
-//task creation in main function
-xTaskCreate( newTask, "rxTask", ledSTACK_SIZE, NULL, tskIDLE_PRIORITY, ( TaskHandle_t * ) NULL );
-```
-
-```c
-static portTASK_FUNCTION( newTask, pvParameters ) // this will expend to vTaskCode()
-{
-    char tempChar1=0;
-    static uint8_t item_array[20];
-    for( ;; )
-    {
-        // receive queue
-        if(xQueueReceive(msg_queue1,(void *) &tempChar1,0)==pdTRUE)
-        {
-            usart_SendChar(UART5,tempChar1);
-        }
-        vTaskDelay(100);   //reduce the delay to see the received data quickly.
-        // Task code goes here.
-    }
-}
-```
-
-
+> In case you are not aware, there are pages on the FreeRTOS.org site that describe each in some detail.
+>
+> Short reply as using my cellphone.
+>
+> Stream buffers carry messages that don’t necessary have a beginning and end, hence stream. Thing of a series of bytes arriving on a serial port.
+>
+> Message buffers hold discrete messages that have a fixed size, but each message does not have to be the same size (variable sized messages).
+>
+> The above two are light weight implementations that are fast but have usage restrictions documented on the website.
+>
+> Queues are much more sophisticated objects with multiple senders and receivers that are held in priority lists. Each message sent to a queue must be the same size, the size being specified when the queue is created. The website also documents techniques
+> to use queues for variable size messages to, but only indirectly.
 
 ## RTOS Kernel Control
 
@@ -676,64 +459,275 @@ ISR()
 }
 ```
 
+## Queue
 
+### xQueueCreate
 
-## Customization
+xQueueCreate will create Queue. It will take two argument i.e. Queue length and size of object to be placed inside the queue. This function should be called in main function. Queue handle should be made, that will have the status of the xQueueCreate function.
 
-### Configuration
-
-FreeRTOS is customized using a configuration file called FreeRTOSConfig.h. Blow is the content of the file with a short description each parameter, this is not the complete list. For a complete list refer to FreeRTOS website.
+The example code uses a queue to send data from a 'task' to a 2nd 'task'. The 2nd task will send a message when a button is pressed.
 
 ```c
-#ifndef FREERTOS_CONFIG_H
-#define FREERTOS_CONFIG_H
+//Define queue length
+static uint8_t msg_queue_len = 5;
 
-/* Here is a good place to include header files that are required across
-your application. */
-#include "something.h"
-/* This should be kept as provided in demo app, this is in words not bytes(1 word is 4 bytes), thus it is 130*4 = 520 bytes */
-#define configMINIMAL_STACK_SIZE		( ( unsigned short ) 130 )
-/* Memory allocation related definitions. */
-/* These are set to their default values(we will not define them), see FreeRtos.h */
+//Queue handle
+static QueueHandle_t msg_queue;
 
-/* Optional functions */
-/* Define features that are to be used, like taskDelay */
-/* A header file that defines trace macro can be included here. */
+//Queue create
+// call this is a function, or main setup function, this is just an example
+void setupFunction()
+{
+	msg_queue = xQueueCreate(msg_queue_len, sizeof(int));
+}
+//create task function
+static portTASK_FUNCTION_PROTO( Queue_sendTask_button, pvParameters );
+static portTASK_FUNCTION_PROTO( Queue_receiveTask, pvParameters );
 
-#endif /* FREERTOS_CONFIG_H */
+//In main
+void setupFunction2()
+{
+    xTaskCreate( Queue_sendTask,
+    			"send",
+    			configMINIMAL_STACK_SIZE,
+    			NULL,
+    			tskIDLE_PRIORITY,
+    			( TaskHandle_t * ) NULL );
+    xTaskCreate( Queue_receiveTask,
+    			 "receive",
+    			 configMINIMAL_STACK_SIZE,
+    			 NULL,
+    			 tskIDLE_PRIORITY,
+    			 ( TaskHandle_t * ) NULL );
+}
+// this will expend to vTaskCode()
+static Queue_receiveTask( Queue_receiveTask, pvParameters )
+{
+  uint8_t item;
+  uint8_t index=0;
+  for( ;; )
+  {
+    
+    if(xQueueReceive(msg_queue,(void *) &item,0)==pdTRUE){
+      asm("NOP");
+      item_array[index++] = item;
+    }
+    vTaskDelay(100);
+    // Task code goes here.
+  }
+}
+
+static portTASK_FUNCTION( Queue_sendTask_button, pvParameters ) 
+{
+  uint8_t btn_state_now;
+  uint8_t btn_state_prev;
+  static uint8_t num=0;
+  for( ;; )
+  {
+    if(GPIO_ReadInputDataBit(GPIOB,GPIO_Pin_12)==Bit_RESET)
+    {
+      btn_state_now=0;
+    }
+    else
+    {
+      btn_state_now=1;
+    }
+    if(btn_state_now != btn_state_prev)
+    {
+      btn_state_prev=btn_state_now;
+      if(btn_state_now==0)
+      {
+       
+        if(xQueueSend(msg_queue,(void *)&num,10) != pdTRUE){
+        //queue full
+        }
+        num++;
+      }
+    }
+    vTaskDelay(100);
+    // Task code goes here.
+  }
+}
 ```
 
-### Memory Management
+## UART Transmit and Receive 
 
-The FreeRtos version 10 provide five heap management schemes. Only one scheme file should be used at a time(personal preference). Following below:
+We will configure UART same as in SPL(Standard peripheral library). Only one thing will change in the configuration that is the priority of the interrupt. Its priority should be lower configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY.  
 
-- heap_1 - the very simplest, does not permit memory to be freed.
-- heap_2 - permits memory to be freed, but does not coalescence adjacent free blocks.
-- heap_3 - simply wraps the standard malloc() and free() for thread safety.
-- heap_4 - coalescences adjacent free blocks to avoid fragmentation. Includes absolute address placement option.
-- heap_5 - as per heap_4, with the ability to span the heap across multiple non-adjacent memory areas.
+ The highest interrupt priority that can be used by any interrupt service
+routine that makes calls to interrupt safe FreeRTOS API functions.  DO NOT CALL
+INTERRUPT SAFE FREERTOS API FUNCTIONS FROM ANY INTERRUPT THAT HAS A HIGHER
+PRIORITY THAN THIS! **(higher priorities are lower numeric values. )**
 
-Notes:
+```c
+//This is already defined in FreeRTOSConfig.h file
+#define configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY	5 
+```
 
-- heap_1 is less useful since FreeRTOS added support for static allocation.
-- heap_2 is now considered legacy as the newer heap_4 implementation is preferred.
+Thus the ISR should be of value higher or equal to 5. This means interrupts of 5,6,7..15 can use the FreeRTOS ISR safe function inside them, and ISR of 0,1,2,3 and 4 cannot use the FreeRTOS ISR safe functions.(ISR safe function are define in FreeRTOS docs)
 
-### Stream Buffers vs Message Buffers vs Queues
+The below example receives characters from uart5 and echo them back using a task, this demonstrate queues.
 
-Here is a reply from 'Richard Barry' creator of FreeRtos.
+### UART Configuration
 
-> In case you are not aware, there are pages on the FreeRTOS.org site that describe each in some detail.
->
-> Short reply as using my cellphone.
->
-> Stream buffers carry messages that don’t necessary have a beginning and end, hence stream. Thing of a series of bytes arriving on a serial port.
->
-> Message buffers hold discrete messages that have a fixed size, but each message does not have to be the same size (variable sized messages).
->
-> The above two are light weight implementations that are fast but have usage restrictions documented on the website.
->
-> Queues are much more sophisticated objects with multiple senders and receivers that are held in priority lists. Each message sent to a queue must be the same size, the size being specified when the queue is created. The website also documents techniques
-> to use queues for variable size messages to, but only indirectly.
+```c
+// configure usart5 as tx and rx
+void UART5_Configuration(uint32_t Baud)
+{
+	GPIO_InitTypeDef  GPIO_InitStructure;
+	USART_InitTypeDef USART_InitStructure;
+	NVIC_InitTypeDef  NVIC_InitStructure;
+
+	// Enable GPIOC CLOCK
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOC, ENABLE);
+
+	//Enable GPIOD CLOCK
+	RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOD, ENABLE);
+
+	//Enable UART5 CLOCK
+	RCC_APB1PeriphClockCmd(RCC_APB1Periph_UART5, ENABLE);
+
+	// Configure the PD12 as a UART5 alternate pin.
+	GPIO_PinAFConfig(GPIOC, GPIO_PinSource12, GPIO_AF_UART5);
+
+	GPIO_InitStructure.GPIO_OType					= GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_PuPd 					= GPIO_PuPd_UP;
+	GPIO_InitStructure.GPIO_Mode 					= GPIO_Mode_AF;
+	GPIO_InitStructure.GPIO_Pin 					= GPIO_Pin_12;					//Configure only TX
+	GPIO_InitStructure.GPIO_Speed 				= GPIO_Speed_50MHz;
+	GPIO_Init(GPIOC, &GPIO_InitStructure);
+
+	// Configure the PD2 as a UART5 alternate pin.
+	GPIO_PinAFConfig(GPIOD, GPIO_PinSource2, GPIO_AF_UART5);
+
+	GPIO_InitStructure.GPIO_OType					= GPIO_OType_PP;
+	GPIO_InitStructure.GPIO_PuPd 					= GPIO_PuPd_UP;
+	GPIO_InitStructure.GPIO_Mode 					= GPIO_Mode_AF;
+	GPIO_InitStructure.GPIO_Pin 					= GPIO_Pin_2;					//Configure only TX
+	GPIO_InitStructure.GPIO_Speed 				= GPIO_Speed_50MHz;
+	GPIO_Init(GPIOD, &GPIO_InitStructure);
+
+
+	/* Enable the UART5 Interrupt */
+	NVIC_InitStructure.NVIC_IRQChannel = UART5_IRQn;
+    //low priority campare to 5
+	NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 6;
+	NVIC_InitStructure.NVIC_IRQChannelSubPriority 	   = 0;
+	NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+	NVIC_Init(&NVIC_InitStructure);
+
+
+	USART_InitStructure.USART_BaudRate   			= Baud;
+	USART_InitStructure.USART_WordLength          = USART_WordLength_8b;
+	USART_InitStructure.USART_StopBits            = USART_StopBits_1;
+	USART_InitStructure.USART_Parity  		    = USART_Parity_No;
+	USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
+	USART_InitStructure.USART_Mode				= USART_Mode_Rx | USART_Mode_Tx;
+
+	USART_ITConfig(UART5, USART_IT_RXNE, ENABLE); // Enable USART1 Receive Interrupt
+	USART_Init(UART5, &USART_InitStructure);
+	USART_Cmd(UART5,  ENABLE);
+}
+// sending functions
+void usart_SendString(USART_TypeDef* USARTx, uint8_t * str)
+{
+	while (*str != '\0')
+	{
+		usart_SendChar(USARTx,*str);
+		str++;
+	}
+}
+// usart_SendChar(UART5,'a');
+void usart_SendChar(USART_TypeDef* USARTx, uint8_t ch)
+{
+	while (!(USARTx->SR & USART_SR_TXE))
+		; // wait for TX to empty
+	USART_SendData(USARTx, ch & 0xFF);
+	while (!(USARTx->SR & USART_SR_TC))
+		; // wait for Transmit complete
+}
+void usart5_sendString(uint8_t *str)
+{
+	usart_SendString(UART5,str);
+}
+```
+
+### UART Receive Data
+
+We will use ISR to receive the data and save it in Queue. we will first create the queue and specify its length.
+
+```c
+// this should be in scope of both sender and reciver
+//Define queue length
+static uint8_t msg_queue1_len = 10;
+
+//Queue handle
+static QueueHandle_t msg_queue1;
+```
+
+
+
+```c
+//Queue Creation
+// in main setup function
+msg_queue1 = xQueueCreate(msg_queue1_len, sizeof(char));
+```
+
+
+
+```c
+void UART5_IRQHandler(void)
+{
+  //definations for QueuefromISR
+  char cIn;
+  BaseType_t xHigherPriorityTaskWoken;
+  // We have not woken a task at the start of the ISR.
+  xHigherPriorityTaskWoken = pdFALSE;
+  if (USART_GetITStatus(UART5, USART_IT_RXNE) != RESET)
+  {
+    cIn = USART_ReceiveData(UART5);
+    // Post the byte.
+    xQueueSendFromISR( msg_queue1, &cIn, &xHigherPriorityTaskWoken );
+    // Now the buffer is empty we can switch context if necessary.
+    if( xHigherPriorityTaskWoken )
+    {
+      // Actual macro used here is port specific.
+      portYIELD_FROM_ISR (pdTRUE);
+    }
+    USART_ClearITPendingBit(UART5, USART_IT_RXNE);
+  }
+}
+```
+
+### UART Send Data
+
+ We will make a task to receive the queue that is send from the interrupt. 
+
+```c
+//task function
+static portTASK_FUNCTION_PROTO( newTask, pvParameters );
+
+//task creation in main function
+xTaskCreate( newTask, "rxTask", ledSTACK_SIZE, NULL, tskIDLE_PRIORITY, ( TaskHandle_t * ) NULL );
+```
+
+```c
+static portTASK_FUNCTION( newTask, pvParameters ) // this will expend to vTaskCode()
+{
+    char tempChar1=0;
+    static uint8_t item_array[20];
+    for( ;; )
+    {
+        // receive queue
+        if(xQueueReceive(msg_queue1,(void *) &tempChar1,0)==pdTRUE)
+        {
+            usart_SendChar(UART5,tempChar1);
+        }
+        vTaskDelay(100);   //reduce the delay to see the received data quickly.
+        // Task code goes here.
+    }
+}
+```
 
 ### RTOS Task Notifications
 
@@ -745,7 +739,7 @@ xTaskNotifyGiveIndexed( xLed1_Task, 0 );
 
 ulTaskNotifyTakeIndexed( 0,pdTRUE,portMAX_DELAY );
 
-```
+```c
 static TaskHandle_t xLed1_Task; // must be global
 void main()
 {
