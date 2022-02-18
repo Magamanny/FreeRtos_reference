@@ -121,6 +121,20 @@ void vOtherFunction( void )
 
 ## Task Control
 
+### pdMS_TO_TICKS
+
+```c
+// using pdMS_TO_TICKS
+pdMS_TO_TICKS(200);
+// usage in delay
+vTaskDelay(pdMS_TO_TICKS(200)); // give the number of ticks for 200ms
+
+// same thing using portTICK_PERIOD_MS macro
+200/portTICK_PERIOD_MS;
+// usage in delay
+vTaskDelay(200/portTICK_PERIOD_MS);
+```
+
 ### vTaskDelay
 
 Delay a task for a given number of ticks. vTaskDelay() specifies a time at which the task wishes to unblock **relative to** the time at which vTaskDelay() is called.
