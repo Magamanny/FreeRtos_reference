@@ -928,3 +928,54 @@ static void func_two( const char *pcString )
 ### Optimization Out variable
 
 When using a compiler it will optimize out most of the debug code and also some variable that code related to them as It thinks that they are just constant(we may be modifying them in a ISR)
+
+
+### Timers
+
+One shot timer implemented as follows. 
+
+*NOTE: No blocking function (like vTaskDelay) should be used inside timer. Otherwise it will be a deadlock.*
+
+1. Add the FreeRTOS/Source/timers.c source file to your project, and
+
+2. Define the constants detailed in the table below in the applications FreeRTOSConfig.h header file.
+
+   configUSE_TIMERS 	=	1
+
+   configTIMER_TASK_PRIORITY	=	1
+
+   configTIMER_QUEUE_LENGTH (leave default)
+
+   configTIMER_TASK_STACK_DEPTH (leave default)
+
+   
+
+   
+
+   ```c
+   TimerHandle_t one_shot_timer = NULL; //initialize outside main
+   //extern this into extern.h file (so you can use it in other files)
+   
+     one_shot_timer = xTimerCreate("one-shot timer",20000/ portTICK_PERIOD_MS,pdFALSE,(void *)0,myTimerCallback); //timer create
+     
+      if( one_shot_timer == NULL ) //this checks that timer is created correctly or not.
+       {
+           /* The timer was not created. */
+         asm("NOP");
+       }
+     
+     xTimerStart(one_shot_timer,portMAX_DELAY); //this starts the timer
+   
+   // xTimerCreate and xTimerStart should be start before schedular
+   
+   void myTimerCallback(TimerHandle_t xTimer)//this fn will be call when timer ends.
+   {
+     lock=true; // this can be any statement.
+   }
+   
+   xTimerReset(one_shot_timer,portMAX_DELAY);// one timer should be reset otherwise it will be called only once.
+   
+   //Note: If we want to reset timer again and again then we should use another type of timer i.e. Auto-Reload Timer.
+   ```
+
+   
