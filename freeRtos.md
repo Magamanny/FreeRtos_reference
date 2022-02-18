@@ -29,6 +29,8 @@ portTASK_FUNCTION and portTASK_FUNCTION_PROTO macros. These macro are provided t
 
 ## Task Creation
 
+> Note: Call vTaskStartScheduler() otherwise the task will not run.
+
 ### xTaskCreate
 
 Create a new task and add it to the list of tasks that are ready to run. 
@@ -77,6 +79,44 @@ static portTASK_FUNCTION( vTaskMyLed_1, pvParameters ) // this will expend to vT
 #define configMAX_PRIORITIES			( 5 )
 ```
 
+### Static Task Create
+
+Only avaliable when configSUPPORT_STATIC_ALLOCATION=1.
+
+When using static allocation we need to provide defination of two functions called.
+
+*vApplicationGetIdleTaskMemory* 
+
+*vApplicationGetTimerTaskMemory*
+
+```c
+#define STACK_SIZE 200
+
+StaticTask_t xTaskBuffer;
+StackType_t xStack[ STACK_SIZE ];
+
+void vTaskCode( void * pvParameters )
+{
+    configASSERT( ( uint32_t ) pvParameters == 1UL );
+
+    for( ;; )
+    {
+    }
+}
+void vOtherFunction( void )
+{
+    TaskHandle_t xHandle = NULL;
+    xHandle = xTaskCreateStatic(
+        vTaskCode,       /* Function that implements the task. */
+        "NAME",          /* Text name for the task. */
+        STACK_SIZE,      /* Number of indexes in the xStack array. */
+        ( void * ) 1,    /* Parameter passed into the task. */
+        tskIDLE_PRIORITY,/* Priority at which the task is created. */
+        xStack,          /* Array to use as the task's stack. */
+        &xTaskBuffer );  /* Variable to hold the task's data structure. */
+}
+```
+
 
 
 ## Task Control
@@ -122,8 +162,9 @@ This function differs from vTaskDelay() in one important aspect: vTaskDelay() sp
  // Perform an action every 10 ticks.
  void vTaskFunction( void * pvParameters )
  {
- TickType_t xLastWakeTime;
- const TickType_t xFrequency = 10;
+ 	TickType_t xLastWakeTime; // this is used by the function
+     // we can use portTICK_PERIOD_MS for calculing ms
+ 	const TickType_t xFrequency = 10; // every 10 tick
 
      // Initialise the xLastWakeTime variable with the current time.
      xLastWakeTime = xTaskGetTickCount();
@@ -187,6 +228,32 @@ Notes:
 
 - heap_1 is less useful since FreeRTOS added support for static allocation.
 - heap_2 is now considered legacy as the newer heap_4 implementation is preferred.
+
+### uxTaskGetStackHighWaterMark
+
+```C
+// To get other task watermark pass the task handler to it
+void vTask1( void * pvParameters )
+{
+    UBaseType_t uxHighWaterMark;
+
+    /* Inspect our own high water mark on entering the task. */
+    uxHighWaterMark = uxTaskGetStackHighWaterMark( NULL );
+
+    for( ;; )
+    {
+        /* Call any function. */
+        vTaskDelay( 1000 );
+
+        /* Calling the function will have used some stack space, we would 
+        therefore now expect uxTaskGetStackHighWaterMark() to return a 
+        value lower than when it was called on entering the task. */
+        uxHighWaterMark = uxTaskGetStackHighWaterMark( NULL );
+    }
+}
+```
+
+
 
 ### Stream Buffers vs Message Buffers vs Queues
 
@@ -381,6 +448,8 @@ xStreamBufferSendFromISR();
 ### Example
 
 ```c
+#include "stream_buffer.h" // stream buffer defination
+// also add stream_buffer.c to the build system
 // stream buffer 
 // size of buffer
 #define sbiSTREAM_BUFFER_LENGTH_BYTES		( ( size_t ) 100 )
@@ -409,6 +478,7 @@ recivingTask()
     static BaseType_t xNextByte = 0;
     size_t xReceivedBytes;
     // set block time to portMAX_DELAY, to wait till trigger level is reached
+    // pdMS_TO_TICKS convert the ms to ticks(taht can be used in vtaskDelay and others functions.)
     const TickType_t xBlockTime = pdMS_TO_TICKS( 20 );
     for(;;)
     {
@@ -468,6 +538,7 @@ xQueueCreate will create Queue. It will take two argument i.e. Queue length and 
 The example code uses a queue to send data from a 'task' to a 2nd 'task'. The 2nd task will send a message when a button is pressed.
 
 ```c
+#include "queue.h"
 //Define queue length
 static uint8_t msg_queue_len = 5;
 
@@ -549,6 +620,43 @@ static portTASK_FUNCTION( Queue_sendTask_button, pvParameters )
   }
 }
 ```
+
+### xQueueReset
+
+```c
+BaseType_t xQueueReset( QueueHandle_t xQueue );
+//usage
+xQueueReset(dispenser_queue); // will return pdPASS
+```
+
+Resets a queue to its original empty state.
+
+### xQueueIsQueueFullFromISR
+
+queue.h
+
+```
+BaseType_t xQueueIsQueueFullFromISR( const QueueHandle_t xQueue );
+```
+
+Queries a queue to determine if the queue is full. This function should only be used in an ISR.
+
+- **Parameters:**
+
+  *xQueue* The handle of the queue being queried
+
+- **Returns:**
+
+  pdFALSE if the queue is not full, or pdTRUE if the queue is full.
+
+```c
+if(xQueueIsQueueFullFromISR(queue)==pdTRUE )
+{
+ // do thing when queue is full
+}
+```
+
+
 
 ## UART Transmit and Receive 
 
@@ -775,6 +883,10 @@ static portTASK_FUNCTION( vTaskMyButton, pvParameters )
 }
 ```
 
+A simple approach will be to use 'xTaskNotify' and 'xTaskNotifyGive' for single notification.
+
+Note: in arduino freertos the xTaskNotifyGiveIndexed where not present(Prior to FreeRTOS V10.4.0)
+
 ### Mutexes
 
 Mutexes are RTOS objects that are used for resource management. The word is originate form the word 'MUTual EXclution'.
@@ -811,3 +923,8 @@ static void func_two( const char *pcString )
 
 ```
 
+### Message Buffer
+
+### Optimization Out variable
+
+When using a compiler it will optimize out most of the debug code and also some variable that code related to them as It thinks that they are just constant(we may be modifying them in a ISR)
