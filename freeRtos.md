@@ -944,7 +944,7 @@ static void func_two( const char *pcString )
 When using a compiler it will optimize out most of the debug code and also some variable that code related to them as It thinks that they are just constant(we may be modifying them in a ISR)
 
 
-### Timers
+# Timers
 
 One shot timer implemented as follows. 
 
@@ -970,7 +970,7 @@ One shot timer implemented as follows.
    TimerHandle_t one_shot_timer = NULL; //initialize outside main
    //extern this into extern.h file (so you can use it in other files)
    
-     one_shot_timer = xTimerCreate("one-shot timer",20000/ portTICK_PERIOD_MS,pdFALSE,(void *)0,myTimerCallback); //timer create
+     one_shot_timer = xTimerCreate("one-shot timer",20000/ portTICK_PERIOD_MS,pdFALSE,(void *)0,myTimerCallback); //timer create, pdFALSE to make one short
      
       if( one_shot_timer == NULL ) //this checks that timer is created correctly or not.
        {
@@ -992,4 +992,71 @@ One shot timer implemented as follows.
    //Note: If we want to reset timer again and again then we should use another type of timer i.e. Auto-Reload Timer.
    ```
 
+   ## vTimerSetTimerID and pvTimerGetTimerID
    
+   A single value can be stored in the timer handler known as id,(more values can be done). For example if multiple timer executes the same call back function, we can inspect the timer handler(that is passed to the callback automatically) for its id to determent the timer that called it.
+   
+   The id field can be used for any prepose by the user.
+   
+   ```c
+   // This example create two one short timer and trigger then using the timerStart user defined function, the timer uses the same callback but you will see that the call back will be called 2 times, 1 time by each timer and will only increament its own id.
+   static TimerHandle_t timer1 = NULL;
+   static TimerHandle_t timer2 = NULL;
+   void myTimerCallback(TimerHandle_t xTimer)//this fn will be call when timer ends.
+   {
+       uint32_t ulCallCount;
+       ulCallCount =( uint32_t ) pvTimerGetTimerID( xTimer );
+       ulCallCount++;
+       vTimerSetTimerID( xTimer, ( void * ) ulCallCount ); // update the id field
+   }
+   void createTimer()
+   {
+       timer1 = xTimerCreate("timer2",
+                                 pdMS_TO_TICKS(600),
+                                 pdFALSE, // make it a one short timer
+                                 (void *)0, // this is the it initaliy 0
+                                 myTimerCallback);
+       timer2 = xTimerCreate("timer1",
+                                 pdMS_TO_TICKS(600),
+                                 pdFALSE,(void *)0,
+                                 myTimerCallback);
+   }
+   void startTimer()
+   {
+       xTimerStart(xTimer);
+       xTimerStart(xTimer);
+   }
+   ```
+   
+   ## See Timer Running
+   
+   timers.h
+   
+   BaseType_t xTimerIsTimerActive( TimerHandle_t xTimer );
+   
+   Queries a [software timer](https://www.freertos.org/RTOS-software-timer.html) to see if it is active or dormant.
+   
+   A timer will be dormant if:
+   
+   1. It has been created but not started, or
+   2. It is an expired one-shot timer that has not been restarted.
+   
+   ```c
+    /* This function assumes xTimer has already
+    been created. */
+    void vAFunction( TimerHandle_t xTimer )
+    {
+        /* or more simply and equivalently
+        "if( xTimerIsTimerActive( xTimer ) )" */
+        if( xTimerIsTimerActive( xTimer ) != pdFALSE )
+        {
+            /* xTimer is active, do something. */
+        }
+        else
+        {
+            /* xTimer is not active, do something else. */
+        }
+    }
+   ```
+
+​		This function can be used to see if a timer is running.
