@@ -967,6 +967,7 @@ One shot timer implemented as follows.
    
 
    ```c
+   #include "timers.h" // include to use timers
    TimerHandle_t one_shot_timer = NULL; //initialize outside main
    //extern this into extern.h file (so you can use it in other files)
    
@@ -977,7 +978,7 @@ One shot timer implemented as follows.
            /* The timer was not created. */
          asm("NOP");
        }
-     
+     // portMAX_DELAY is the to wait for the timer to start
      xTimerStart(one_shot_timer,portMAX_DELAY); //this starts the timer
    
    // xTimerCreate and xTimerStart should be start before schedular
@@ -991,7 +992,7 @@ One shot timer implemented as follows.
    
    //Note: If we want to reset timer again and again then we should use another type of timer i.e. Auto-Reload Timer.
    ```
-
+   
    ## vTimerSetTimerID and pvTimerGetTimerID
    
    A single value can be stored in the timer handler known as id,(more values can be done). For example if multiple timer executes the same call back function, we can inspect the timer handler(that is passed to the callback automatically) for its id to determent the timer that called it.
