@@ -940,6 +940,7 @@ static void func_two( const char *pcString )
 Below is an example of using semaphore for debugging serial.
 
 ```c
+#include "semphr.h" // in all files for defination of 'SemaphoreHandle_t'
 // extern.h
 extern char debug_buff[256];
 extern SemaphoreHandle_t xDebugSerialMutex;
