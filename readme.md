@@ -937,6 +937,49 @@ static void func_two( const char *pcString )
 
 ```
 
+Below is an example of using semaphore for debugging serial.
+
+```c
+// extern.h
+extern char debug_buff[256];
+extern SemaphoreHandle_t xDebugSerialMutex;
+// define.h
+void debug_printf(char *buff); // debug serial fucntion, the shared resource
+// below is the macro via which we will use the debug
+// printf not used as, it casues issues with optimization
+// Note make sure that the debug_buff is larg enough to hold the string, otherwise
+// memory leak will occure.
+#define DEBUG_PRINTF(...)\
+    if(xSemaphoreTake( xDebugSerialMutex, pdMS_TO_TICKS(1000) ) == pdTRUE){\
+    sprintf((char*)debug_buff, __VA_ARGS__);\
+    debug_printf(debug_buff);\
+    xSemaphoreGive( xDebugSerialMutex );}
+
+// main.c
+char debug_buff[256];
+SemaphoreHandle_t xDebugSerialMutex; // mutex global socp
+void debug_printf(char *buff)
+{
+	Serial.print(buff);
+}
+
+void setup()
+{
+    Serial.begin(115200, SERIAL_8E1);
+    // create mutexex
+	xDebugSerialMutex = xSemaphoreCreateMutex();
+    // other stuff
+    vBlinkTaskCreate(); // some task
+    // use like printf
+    DEBUG_PRINTF("After Creating task FreeHeapSize = %d \r\n", xPortGetFreeHeapSize());
+}
+void loop()
+{
+}
+```
+
+
+
 ### Message Buffer
 
 ### Optimization Out variable
