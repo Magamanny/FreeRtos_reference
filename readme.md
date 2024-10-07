@@ -1063,15 +1063,56 @@ One shot timer implemented as follows.
                                  myTimerCallback);
        timer2 = xTimerCreate("timer1",
                                  pdMS_TO_TICKS(600),
-                                 pdFALSE,(void *)0,
+                                 pdFALSE, // make it a one short timer
+                             	  (void *)0,
                                  myTimerCallback);
    }
    void startTimer()
    {
-       xTimerStart(xTimer);
-       xTimerStart(xTimer);
+       xTimerStart(xTimer,0); // no blocking start
+       xTimerStart(xTimer,pdMS_TO_TICKS(5)); // block 5ms
    }
    ```
+   
+   ## TimerHandle_t, one shot and periodic timer with single call-back
+   
+   The 'TimerHandle_t' can be used to identify the timer that called the callback function, if multiple timers are calling a single function.
+   
+   ```c
+   static TimerHandle_t timer1 = NULL;
+   static TimerHandle_t timer2 = NULL;
+   void myTimerCallback(TimerHandle_t xTimer)//this fn will be call when timer ends.
+   {
+       if(xTimer == timer1)
+       {
+           // do somting related to timer1
+       }
+       else if(xTimer == timer2)
+       {
+           // Do somting related to timer2
+       }
+   }
+   void createTimer()
+   {
+       timer1 = xTimerCreate("timer2",
+                                 pdMS_TO_TICKS(600),
+                                 pdTRUE, // make it preodic timer
+                                 (void *)0, // this is the it initaliy 0
+                                 myTimerCallback);
+       timer2 = xTimerCreate("timer1",
+                                 pdMS_TO_TICKS(600),
+                                 pdFALSE, // make it a one short timer
+                             	  (void *)0,
+                                 myTimerCallback);
+   }
+   void startTimer()
+   {
+       xTimerStart(xTimer,0); // no blocking start
+       xTimerStart(xTimer,pdMS_TO_TICKS(5)); // block 5ms
+   }
+   ```
+   
+   
    
    ## See Timer Running
    
